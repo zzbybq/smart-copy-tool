@@ -1,0 +1,29 @@
+# 依赖与构建产物
+node_modules/
+dist/
+dist-ssr/
+
+# Rust / Tauri 构建输出
+**/target/
+app/src-tauri/gen/schemas/
+
+# 日志与运行时状态
+logs/
+*.log
+state.json
+
+# 本地/编辑器
+*.local
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Windows
+Thumbs.db
+desktop.ini

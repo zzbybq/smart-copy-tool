@@ -1,0 +1,19 @@
+﻿{
+    "Source":  "",
+    "Destination":  "",
+    "Tasks":  [
+
+              ],
+    "CreateSubfolder":  true,
+    "ModeIndex":  0,
+    "Threads":  16,
+    "Retry":  3,
+    "Wait":  5,
+    "IncludeEmpty":  true,
+    "Restartable":  true,
+    "Unbuffered":  true,
+    "SkipOlder":  true,
+    "DryRun":  false,
+    "ExcludeDirs":  "$RECYCLE.BIN;System Volume Information;.git;node_modules",
+    "ExcludeFiles":  "thumbs.db;desktop.ini"
+}
