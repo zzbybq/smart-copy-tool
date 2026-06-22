@@ -19,8 +19,13 @@ use tauri::{AppHandle, Emitter};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-/// 预扫描源目录，返回 (总字节数, 文件数)。
+/// 预扫描源（目录或单个文件），返回 (总字节数, 文件数)。
 pub fn scan_source(path: &str) -> (u64, u64) {
+    let p = Path::new(path);
+    if p.is_file() {
+        let bytes = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        return (bytes, 1);
+    }
     let mut bytes = 0u64;
     let mut files = 0u64;
     for entry in walkdir::WalkDir::new(path)
@@ -49,6 +54,11 @@ fn split_patterns(items: &[String]) -> Vec<String> {
 }
 
 /// 构造 robocopy 参数。`dest` 已是“最终目标目录”（含可能追加的同名子目录）。
+///
+/// robocopy 没有“复制单个文件”的直接形态，它的命令是
+/// `robocopy <源目录> <目标目录> <文件名…>`。所以当源是一个文件时，
+/// 把它的父目录作为源目录、文件名作为筛选项，并且不能用 /E /S /MIR 这些递归/镜像开关
+/// （/MIR 用在单文件上会把目标目录里其它文件删掉，非常危险）。
 pub fn build_args(
     source: &str,
     dest: &Path,
@@ -56,17 +66,36 @@ pub fn build_args(
     mirror: bool,
     log_file: &Path,
 ) -> Vec<String> {
-    let mut args: Vec<String> = Vec::new();
-    args.push(source.to_string());
-    args.push(dest.to_string_lossy().to_string());
-    args.push("*".to_string());
+    let src_path = Path::new(source);
+    let is_file = src_path.is_file();
 
-    if mirror {
-        args.push("/MIR".to_string());
-    } else if options.include_empty {
-        args.push("/E".to_string());
+    let mut args: Vec<String> = Vec::new();
+
+    if is_file {
+        let parent = src_path
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string());
+        let fname = src_path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| source.to_string());
+        args.push(parent);
+        args.push(dest.to_string_lossy().to_string());
+        args.push(fname);
+        // 单文件：不加任何递归/镜像开关。
     } else {
-        args.push("/S".to_string());
+        args.push(source.to_string());
+        args.push(dest.to_string_lossy().to_string());
+        args.push("*".to_string());
+
+        if mirror {
+            args.push("/MIR".to_string());
+        } else if options.include_empty {
+            args.push("/E".to_string());
+        } else {
+            args.push("/S".to_string());
+        }
     }
 
     args.push("/COPY:DAT".to_string());

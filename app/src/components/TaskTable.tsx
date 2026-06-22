@@ -5,7 +5,7 @@ import { formatEta, formatSpeed } from "../format";
 interface Props {
   tasks: Task[];
   disabled: boolean;
-  onReorder: (from: number, to: number) => void;
+  onReorder: (fromId: string, toId: string) => void;
   onEdit: (task: Task) => void;
   onDelete: (id: string) => void;
   onPatch: (id: string, patch: Partial<Task>) => void;
@@ -67,7 +67,7 @@ export default function TaskTable({
   onDelete,
   onPatch,
 }: Props) {
-  const dragFrom = useRef<number | null>(null);
+  const dragFrom = useRef<string | null>(null);
 
   if (tasks.length === 0) {
     return (
@@ -78,9 +78,10 @@ export default function TaskTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="min-h-0 flex-1 overflow-auto">
       <table className="w-full border-collapse text-sm">
-        <thead>
+        <thead className="sticky top-0 z-10">
           <tr className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
             <th className="w-8 px-2 py-2"></th>
             <th className="px-3 py-2">源 / 目标</th>
@@ -94,15 +95,15 @@ export default function TaskTable({
           </tr>
         </thead>
         <tbody>
-          {tasks.map((task, idx) => (
+          {tasks.map((task) => (
             <tr
               key={task.id}
               draggable={!disabled}
-              onDragStart={() => (dragFrom.current = idx)}
+              onDragStart={() => (dragFrom.current = task.id)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => {
-                if (dragFrom.current !== null && dragFrom.current !== idx) {
-                  onReorder(dragFrom.current, idx);
+                if (dragFrom.current !== null && dragFrom.current !== task.id) {
+                  onReorder(dragFrom.current, task.id);
                 }
                 dragFrom.current = null;
               }}
@@ -178,6 +179,7 @@ export default function TaskTable({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

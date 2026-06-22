@@ -14,8 +14,12 @@ use walkdir::WalkDir;
 const MAX_SAMPLES: usize = 30;
 
 /// 根据 create_subfolder 规则推导出真正的目标目录。
+/// 源是单个文件时，文件直接落在目标目录里，不创建同名子目录。
 pub fn effective_destination(source: &str, destination: &str, create_subfolder: bool) -> PathBuf {
     let dest = PathBuf::from(destination);
+    if Path::new(source).is_file() {
+        return dest;
+    }
     if create_subfolder {
         if let Some(leaf) = leaf_name(source) {
             return dest.join(leaf);
@@ -58,6 +62,37 @@ pub fn verify_task(
     let mut result = VerifyResult::default();
     let source_root = PathBuf::from(source);
     let dest_root = effective_destination(source, destination, create_subfolder);
+
+    // 源是单个文件：只核对 目标目录/文件名 这一个文件。
+    if source_root.is_file() {
+        let fname = source_root.file_name().map(PathBuf::from).unwrap_or_default();
+        let dst_path = dest_root.join(&fname);
+        result.checked = 1;
+        match (std::fs::metadata(&source_root), std::fs::metadata(&dst_path)) {
+            (Ok(src_meta), Ok(dst_meta)) => {
+                if src_meta.len() != dst_meta.len() {
+                    result.size_mismatch = 1;
+                    push_sample(&mut result, "大小不一致", &fname);
+                } else if full {
+                    let same = match (sha256_of(&source_root), sha256_of(&dst_path)) {
+                        (Ok(a), Ok(b)) => a == b,
+                        _ => false,
+                    };
+                    if !same {
+                        result.hash_mismatch = 1;
+                        push_sample(&mut result, "内容不一致", &fname);
+                    }
+                }
+            }
+            (Ok(_), Err(_)) => {
+                result.missing = 1;
+                push_sample(&mut result, "缺失", &fname);
+            }
+            _ => {}
+        }
+        result.ok = result.missing == 0 && result.size_mismatch == 0 && result.hash_mismatch == 0;
+        return result;
+    }
 
     for entry in WalkDir::new(&source_root)
         .follow_links(false)

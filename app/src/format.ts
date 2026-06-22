@@ -27,6 +27,18 @@ export function formatEta(secs: number): string {
   return `${h} 时 ${rm} 分`;
 }
 
+/** 把毫秒格式化为 时:分:秒 / 分:秒，用于显示总耗时。 */
+export function formatDuration(ms: number): string {
+  if (!ms || ms < 0) return "0 秒";
+  const total = Math.round(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h} 时 ${m} 分 ${s} 秒`;
+  if (m > 0) return `${m} 分 ${s} 秒`;
+  return `${s} 秒`;
+}
+
 let counter = 0;
 /** 生成一个稳定的任务 id（不依赖 crypto，便于持久化复现）。 */
 export function newId(): string {

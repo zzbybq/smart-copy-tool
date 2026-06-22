@@ -22,7 +22,7 @@ import {
   type Preset,
   type Task,
 } from "./types";
-import { newId } from "./format";
+import { newId, formatDuration } from "./format";
 import OptionsPanel from "./components/OptionsPanel";
 import TaskTable from "./components/TaskTable";
 import EditTaskModal from "./components/EditTaskModal";
@@ -59,6 +59,9 @@ export default function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [editing, setEditing] = useState<Task | null>(null);
   const [toast, setToast] = useState<string>("");
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const startedAt = useRef<number | null>(null);
+  const [view, setView] = useState<"active" | "done">("active");
 
   // 最新值的引用，供持久化使用，避免闭包过期
   const latest = useRef({ tasks, options, presets });
@@ -142,9 +145,12 @@ export default function App() {
 
     void onBatchDone((e) => {
       setRunning(false);
+      if (startedAt.current !== null) setElapsedMs(Date.now() - startedAt.current);
+      const elapsed =
+        startedAt.current !== null ? `，耗时 ${formatDuration(Date.now() - startedAt.current)}` : "";
       const msg = e.canceled
-        ? "任务已取消"
-        : `全部完成：成功 ${e.succeeded} 个，失败 ${e.failed} 个`;
+        ? `任务已取消${elapsed}`
+        : `全部完成：成功 ${e.succeeded} 个，失败 ${e.failed} 个${elapsed}`;
       setToast(msg);
       void notify(msg);
       beep();
@@ -155,6 +161,15 @@ export default function App() {
       unsubs.forEach((u) => u());
     };
   }, []);
+
+  // 运行中每秒刷新一次已用时间
+  useEffect(() => {
+    if (!running) return;
+    const timer = window.setInterval(() => {
+      if (startedAt.current !== null) setElapsedMs(Date.now() - startedAt.current);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [running]);
 
   const pick = async (setter: (v: string) => void, current: string) => {
     const selected = await open({ directory: true, defaultPath: current || undefined });
@@ -187,6 +202,20 @@ export default function App() {
   const pickMultiSources = async () => {
     const selected = await open({
       directory: true,
+      multiple: true,
+      defaultPath: source || undefined,
+    });
+    if (Array.isArray(selected)) {
+      appendMultiSources(selected);
+    } else if (typeof selected === "string") {
+      appendMultiSources([selected]);
+    }
+  };
+
+  // 选择一个或多个文件（不是文件夹），加入待批量列表，复制到同一目标目录
+  const pickFiles = async () => {
+    const selected = await open({
+      directory: false,
       multiple: true,
       defaultPath: source || undefined,
     });
@@ -253,13 +282,31 @@ export default function App() {
     schedulePersist();
   };
 
-  const reorder = (from: number, to: number) => {
+  const reorder = (fromId: string, toId: string) => {
     setTasks((prev) => {
+      const from = prev.findIndex((t) => t.id === fromId);
+      const to = prev.findIndex((t) => t.id === toId);
+      if (from < 0 || to < 0 || from === to) return prev;
       const next = [...prev];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
       return next;
     });
+    schedulePersist();
+  };
+
+  // 清空未完成任务（保留已完成，方便回看）
+  const clearActive = () => {
+    const n = tasks.filter((t) => t.rtStatus !== "done").length;
+    if (n === 0) return;
+    if (!window.confirm(`确认清空 ${n} 个未完成任务？已完成的会保留在「已完成」标签里。`)) return;
+    setTasks((prev) => prev.filter((t) => t.rtStatus === "done"));
+    schedulePersist();
+  };
+
+  // 清空已完成列表
+  const clearCompleted = () => {
+    setTasks((prev) => prev.filter((t) => t.rtStatus !== "done"));
     schedulePersist();
   };
 
@@ -288,6 +335,8 @@ export default function App() {
     }
     setLogs([]);
     setTasks((prev) => prev.map((t) => ({ ...t, ...freshRuntime() })));
+    startedAt.current = Date.now();
+    setElapsedMs(0);
     setRunning(true);
     setToast("");
     try {
@@ -325,6 +374,21 @@ export default function App() {
     setPresets((prev) => prev.filter((p) => p.name !== name));
     schedulePersist();
   };
+
+  // 总体进度统计
+  const totalTasks = tasks.length;
+  const finishedTasks = tasks.filter(
+    (t) => t.rtStatus === "done" || t.rtStatus === "failed" || t.rtStatus === "canceled",
+  ).length;
+  const overallPercent =
+    totalTasks === 0
+      ? 0
+      : tasks.reduce((sum, t) => sum + Math.max(0, Math.min(100, t.rtPercent)), 0) / totalTasks;
+  const showSummary = running || elapsedMs > 0;
+
+  const activeTasks = tasks.filter((t) => t.rtStatus !== "done");
+  const doneTasks = tasks.filter((t) => t.rtStatus === "done");
+  const shownTasks = view === "done" ? doneTasks : activeTasks;
 
   const inputCls =
     "flex-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none disabled:opacity-50";
@@ -372,6 +436,14 @@ export default function App() {
             </button>
             <button
               className={ghostBtn}
+              disabled={running}
+              title="选择一个或多个文件（而非文件夹），复制到目标目录"
+              onClick={pickFiles}
+            >
+              选择文件…
+            </button>
+            <button
+              className={ghostBtn}
               disabled={running || !source.trim()}
               title="把上面输入框里的这个源加入待批量列表"
               onClick={() => appendMultiSources([source])}
@@ -400,7 +472,7 @@ export default function App() {
           <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-sm font-medium text-sky-800">
-                待批量 {multiSources.length} 个源（可跨盘继续添加），将分别复制到同一目标下
+                待批量 {multiSources.length} 项（可跨盘继续添加）：文件夹会作为子目录，文件直接复制到目标目录
               </span>
               <button
                 className="text-xs text-slate-500 hover:text-slate-700"
@@ -486,18 +558,85 @@ export default function App() {
         {toast && <span className="text-sm text-amber-600">{toast}</span>}
       </div>
 
-      {/* 任务表 */}
-      <TaskTable
-        tasks={tasks}
-        disabled={running}
-        onReorder={reorder}
-        onEdit={setEditing}
-        onDelete={deleteTask}
-        onPatch={patchTask}
-      />
+      {/* 总体进度条 */}
+      {showSummary && (
+        <div className="shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="mb-1.5 flex items-center justify-between text-sm">
+            <span className="font-medium text-slate-700">
+              总进度 {finishedTasks}/{totalTasks} 个任务 · {overallPercent.toFixed(0)}%
+            </span>
+            <span className="text-slate-500">
+              {running ? "已用时" : "总耗时"} {formatDuration(elapsedMs)}
+            </span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${running ? "bg-sky-500" : "bg-emerald-500"}`}
+              style={{ width: `${overallPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 任务列表标签 + 清空 */}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-1">
+          <button
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              view === "active"
+                ? "bg-slate-800 text-white"
+                : "bg-white text-slate-600 ring-1 ring-slate-300 hover:bg-slate-100"
+            }`}
+            onClick={() => setView("active")}
+          >
+            任务（{activeTasks.length}）
+          </button>
+          <button
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              view === "done"
+                ? "bg-slate-800 text-white"
+                : "bg-white text-slate-600 ring-1 ring-slate-300 hover:bg-slate-100"
+            }`}
+            onClick={() => setView("done")}
+          >
+            已完成（{doneTasks.length}）
+          </button>
+        </div>
+        {view === "active" ? (
+          <button
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+            disabled={running || activeTasks.length === 0}
+            onClick={clearActive}
+            title="清空未完成任务，已完成的保留在「已完成」标签"
+          >
+            清空任务
+          </button>
+        ) : (
+          <button
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+            disabled={doneTasks.length === 0}
+            onClick={clearCompleted}
+            title="清空已完成记录"
+          >
+            清空已完成
+          </button>
+        )}
+      </div>
+
+      {/* 任务表（可滚动） */}
+      <div className="min-h-0 flex-1">
+        <TaskTable
+          tasks={shownTasks}
+          disabled={running}
+          onReorder={reorder}
+          onEdit={setEditing}
+          onDelete={deleteTask}
+          onPatch={patchTask}
+        />
+      </div>
 
       {/* 日志 */}
-      <div className="min-h-0 flex-1">
+      <div className="h-44 shrink-0">
         <LogPanel lines={logs} onClear={() => setLogs([])} onOpenLogDir={() => void openLogDir()} />
       </div>
 
