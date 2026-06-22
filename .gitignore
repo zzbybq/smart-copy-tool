@@ -27,3 +27,4 @@ state.json
 # Windows
 Thumbs.db
 desktop.ini
+*.stackdump
