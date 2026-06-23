@@ -414,6 +414,11 @@ export default function App() {
         />
       </div>
 
+      {/* 顶部配置区：内容过高时自身滚动，不挤占下方任务列表 */}
+      <div
+        className="flex shrink-0 flex-col gap-3 overflow-y-auto"
+        style={{ maxHeight: "42vh" }}
+      >
       {/* 新增任务卡片 */}
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 text-sm font-semibold text-slate-700">新增任务</div>
@@ -536,6 +541,7 @@ export default function App() {
       </section>
 
       <OptionsPanel options={options} disabled={running} onChange={updateOptions} />
+      </div>
 
       {/* 操作行 */}
       <div className="flex items-center gap-3">
@@ -623,8 +629,8 @@ export default function App() {
         )}
       </div>
 
-      {/* 任务表（可滚动） */}
-      <div className="min-h-0 flex-1">
+      {/* 任务表（可滚动），最小高度保证永不被挤没 */}
+      <div className="flex-1" style={{ minHeight: 180 }}>
         <TaskTable
           tasks={shownTasks}
           disabled={running}

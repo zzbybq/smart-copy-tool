@@ -19,6 +19,29 @@ use tauri::{AppHandle, Emitter};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// robocopy 的输出用的是控制台 OEM 代码页（简体中文系统是 GBK/936），
+/// 不是 UTF-8。这里按系统 OEM 代码页解码，避免日志中文乱码。
+fn decode_console(bytes: &[u8]) -> String {
+    use windows_sys::Win32::Globalization::MultiByteToWideChar;
+    const CP_OEMCP: u32 = 1;
+    if bytes.is_empty() {
+        return String::new();
+    }
+    unsafe {
+        let len = MultiByteToWideChar(CP_OEMCP, 0, bytes.as_ptr(), bytes.len() as i32, std::ptr::null_mut(), 0);
+        if len <= 0 {
+            return String::from_utf8_lossy(bytes).into_owned();
+        }
+        let mut buf = vec![0u16; len as usize];
+        let written =
+            MultiByteToWideChar(CP_OEMCP, 0, bytes.as_ptr(), bytes.len() as i32, buf.as_mut_ptr(), len);
+        if written <= 0 {
+            return String::from_utf8_lossy(bytes).into_owned();
+        }
+        String::from_utf16_lossy(&buf[..written as usize])
+    }
+}
+
 /// 预扫描源（目录或单个文件），返回 (总字节数, 文件数)。
 pub fn scan_source(path: &str) -> (u64, u64) {
     let p = Path::new(path);
@@ -224,7 +247,7 @@ pub fn run_one_task(
                 Err(_) => break,
             };
             let _ = n;
-            let line = String::from_utf8_lossy(&buf);
+            let line = decode_console(&buf);
             let line = line.trim_end_matches(['\r', '\n']).to_string();
             if line.trim().is_empty() {
                 continue;
@@ -257,11 +280,11 @@ pub fn run_one_task(
         }
     }
 
-    // 排空 stderr 到日志
+    // 排空 stderr 到日志（同样按 OEM 代码页解码）
     if let Some(mut stderr) = child.stderr.take() {
-        let mut s = String::new();
-        let _ = stderr.read_to_string(&mut s);
-        for line in s.lines() {
+        let mut raw: Vec<u8> = Vec::new();
+        let _ = stderr.read_to_end(&mut raw);
+        for line in decode_console(&raw).lines() {
             if !line.trim().is_empty() {
                 emit_log(app, &id, line);
             }
