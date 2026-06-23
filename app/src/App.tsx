@@ -433,27 +433,21 @@ export default function App() {
               placeholder="例如 D:\ai_work\desktop"
               onChange={(e) => setSource(e.target.value)}
             />
-            <button className={ghostBtn} disabled={running} onClick={() => pick(setSource, source)}>
-              选择…
-            </button>
-            <button className={ghostBtn} disabled={running} onClick={pickMultiSources}>
-              选择多个…
+            <button
+              className={ghostBtn}
+              disabled={running}
+              title="选择一个或多个文件夹，加入待批量列表（各自作为子目录复制到目标下）"
+              onClick={pickMultiSources}
+            >
+              选择文件夹…
             </button>
             <button
               className={ghostBtn}
               disabled={running}
-              title="选择一个或多个文件（而非文件夹），复制到目标目录"
+              title="选择一个或多个文件（而非文件夹），加入待批量列表，直接复制到目标目录"
               onClick={pickFiles}
             >
               选择文件…
-            </button>
-            <button
-              className={ghostBtn}
-              disabled={running || !source.trim()}
-              title="把上面输入框里的这个源加入待批量列表"
-              onClick={() => appendMultiSources([source])}
-            >
-              加入批量
             </button>
           </div>
 
